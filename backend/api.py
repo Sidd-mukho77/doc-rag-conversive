@@ -192,14 +192,29 @@ Instructions:
 - Keep it organized and easy to read"""
     
     try:
-        tools = [types.Tool(url_context=types.UrlContext())]
-        config = types.GenerateContentConfig(tools=tools)
+        # Try to use URL context if available (requires certain API tiers)
+        config = None
+        if urls:
+            try:
+                # Attempt to create URL context tool
+                from google.genai.types import Tool, UrlContext
+                url_context_tool = Tool(url_context=UrlContext())
+                config = types.GenerateContentConfig(tools=[url_context_tool])
+            except (ImportError, AttributeError):
+                # URL context not available, will use URLs in prompt instead
+                pass
         
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=config
-        )
+        if config:
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=config
+            )
+        else:
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
         
         generation_time = time.time() - start_time
         
