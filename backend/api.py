@@ -123,21 +123,21 @@ def combined_deep_search(query, context_docs):
     
     for attempt in range(max_retries):
         try:
-        # Use Google Search grounding to get web information
-        grounding_tool = types.Tool(google_search=types.GoogleSearch())
-        config = types.GenerateContentConfig(tools=[grounding_tool])
-        
-        # Build comprehensive prompt
-        doc_section = ""
-        if doc_context:
-            doc_section = f"\n\nRelevant Documentation I Found:\n{doc_context}\n"
-        
-        url_section = ""
-        if urls:
-            url_list = "\n".join([f"- {url}" for url in urls])
-            url_section = f"\n\nDocumentation Links:\n{url_list}\n"
-        
-        prompt = f"""You are Convie, an expert SMS Magic assistant providing comprehensive, in-depth guidance.
+            # Use Google Search grounding to get web information
+            grounding_tool = types.Tool(google_search=types.GoogleSearch())
+            config = types.GenerateContentConfig(tools=[grounding_tool])
+            
+            # Build comprehensive prompt
+            doc_section = ""
+            if doc_context:
+                doc_section = f"\n\nRelevant Documentation I Found:\n{doc_context}\n"
+            
+            url_section = ""
+            if urls:
+                url_list = "\n".join([f"- {url}" for url in urls])
+                url_section = f"\n\nDocumentation Links:\n{url_list}\n"
+            
+            prompt = f"""You are Convie, an expert SMS Magic assistant providing comprehensive, in-depth guidance.
 
 User Question: "{query}"
 {doc_section}{url_section}
@@ -181,13 +181,13 @@ Response Guidelines:
    - Thorough but not overwhelming
 
 Remember: This is a comprehensive "Dive Deeper" response. Be detailed, practical, and complete. The user wants the full picture!"""
-        
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=config
-        )
-        
+            
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=config
+            )
+            
             generation_time = time.time() - start_time
             cleaned_response = clean_markdown(response.text)
             
