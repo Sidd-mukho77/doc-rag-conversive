@@ -189,6 +189,11 @@ Remember: This is a comprehensive "Dive Deeper" response. Be detailed, practical
             )
             
             generation_time = time.time() - start_time
+            
+            # Check if response has text
+            if not response or not response.text:
+                return "I apologize, but I couldn't generate a response. Please try again.", generation_time, False
+            
             cleaned_response = clean_markdown(response.text)
             
             return cleaned_response, generation_time, True
