@@ -95,7 +95,7 @@ def clean_markdown(text):
     
     return text.strip()
 
-def web_search_response(query):
+def web_search_response(query, doc_context=None):
     """Use Gemini's Google Search grounding for web search"""
     import time
     start_time = time.time()
@@ -104,14 +104,43 @@ def web_search_response(query):
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
         config = types.GenerateContentConfig(tools=[grounding_tool])
         
-        prompt = f"""You are Convie, a helpful SMS Magic assistant. The user asked: "{query}"
+        # Build prompt with any available doc context
+        context_note = ""
+        if doc_context:
+            context_note = f"\n\nI found some limited information in my documentation:\n{doc_context}\n\nBut let me search the web for more comprehensive and up-to-date information."
+        
+        prompt = f"""You are Convie, an expert SMS Magic assistant with deep knowledge of marketing automation and messaging platforms.
 
-I couldn't find this information in my stored documentation, so I'm searching the web for you.
+User Question: "{query}"{context_note}
 
-Please provide a clear, helpful answer based on current web information. Format your response with:
-- Clear numbered steps or bullet points
-- Simple, professional language
-- Practical, actionable information"""
+Your Task:
+Search the web for the most current, accurate, and comprehensive information to answer this question.
+
+Response Guidelines:
+1. Structure & Clarity:
+   - Start with a brief, friendly introduction
+   - Use numbered steps for processes (e.g., "1. Configure Settings -> Begin by...")
+   - Use sub-points with letters (a., b., c.) for detailed breakdowns
+   - Use simple arrows (->) to show progression or relationships
+
+2. Content Quality:
+   - Provide specific, actionable information
+   - Include relevant details like where to find features, what to click, etc.
+   - Mention any prerequisites or important considerations
+   - Add helpful tips or best practices when relevant
+
+3. Formatting:
+   - Keep it clean and readable
+   - NO asterisks, NO hashtags, NO excessive formatting
+   - Use simple line breaks for organization
+   - Be concise but thorough
+
+4. Tone:
+   - Professional yet warm and approachable
+   - Confident and knowledgeable
+   - Helpful and supportive
+
+Remember: You're helping someone accomplish a real task, so be practical and clear."""
         
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
@@ -124,28 +153,39 @@ Please provide a clear, helpful answer based on current web information. Format 
         
         return cleaned_response, generation_time, True
     except Exception as e:
-        return f"I apologize, but I encountered an error while searching: {str(e)}", 0, False
+        return f"I apologize, but I encountered an error while searching the web: {str(e)}", 0, False
 
-def generate_response(query, context_docs, use_web_search=False):
+def generate_response(query, context_docs, use_web_search=False, dive_deeper=False):
     """Generate AI response"""
     import time
     start_time = time.time()
     
-    # If web search is requested or no docs found
-    if use_web_search or not context_docs:
-        return web_search_response(query)
-    
-    # Extract URLs and context
+    # Extract URLs and context first
     urls = []
     context_text = []
-    for doc in context_docs:
-        text = doc.metadata.get('text', '')
-        context_text.append(f"{doc.metadata.get('title', 'Unknown')}\n{text}")
-        found_urls = re.findall(r'https://docs\.beconversive\.com/[^\s\)]+', text)
-        urls.extend(found_urls[:2])
+    if context_docs:
+        for doc in context_docs:
+            text = doc.metadata.get('text', '')
+            context_text.append(f"{doc.metadata.get('title', 'Unknown')}\n{text}")
+            found_urls = re.findall(r'https://docs\.beconversive\.com/[^\s\)]+', text)
+            urls.extend(found_urls[:2])
     
     urls = list(set(urls))[:10]
-    context = "\n\n".join(context_text)
+    context = "\n\n".join(context_text) if context_text else ""
+    
+    # Check relevance of documents
+    has_good_docs = False
+    if context_docs:
+        has_good_docs = any(doc.score > 0.75 for doc in context_docs)
+    
+    # If dive deeper and no good docs, use web search with context
+    if dive_deeper and not has_good_docs:
+        doc_snippet = context[:500] if context else None
+        return web_search_response(query, doc_snippet)
+    
+    # If web search is explicitly requested or no docs at all
+    if use_web_search or not context_docs:
+        return web_search_response(query)
     
     # Add memory
     memory_context = ""
@@ -154,42 +194,56 @@ def generate_response(query, context_docs, use_web_search=False):
         for mem in conversation_memory[-3:]:
             memory_context += f"User: {mem['query']}\nAssistant: {mem['response'][:150]}...\n\n"
     
-    # Build prompt
+    # Build enhanced prompt
+    url_section = ""
     if urls:
         url_list = "\n".join([f"- {url}" for url in urls])
-        prompt = f"""You are Convie, a helpful and professional SMS Magic assistant.
+        url_section = f"\n\nReference Documentation Links:\n{url_list}\n"
+    
+    prompt = f"""You are Convie, an expert SMS Magic assistant with comprehensive knowledge of the platform.
 
 {memory_context}
-Context from documentation:
-{context}
+Documentation Context:
+{context}{url_section}
 
-Reference links: {url_list}
+User Question: "{query}"
 
-User asks: {query}
+Response Guidelines:
 
-Instructions:
-- Provide clear, numbered steps (like "1. Review Campaign Settings -> Start by...")
-- Use simple arrows (->) to show progression
-- Use sub-points with letters (a., b., c.) for details
-- Keep formatting minimal - NO asterisks, NO hashtags
-- Be warm and professional
-- Keep it organized and easy to read"""
-    else:
-        prompt = f"""You are Convie, a helpful and professional SMS Magic assistant.
+1. Structure & Organization:
+   - Start with a brief, friendly acknowledgment
+   - Break down complex processes into clear, numbered steps
+   - Format: "1. Step Name -> Brief description of what to do"
+   - Use sub-points with letters (a., b., c.) for detailed instructions
+   - Use arrows (->) to show relationships or progression
 
-{memory_context}
-Context from documentation:
-{context}
+2. Content Quality:
+   - Be specific and actionable - tell them exactly what to do
+   - Include WHERE to find features (e.g., "Navigate to Settings > Campaigns")
+   - Mention any prerequisites or requirements upfront
+   - Add helpful tips or warnings when relevant
+   - Reference the documentation links when appropriate
 
-User asks: {query}
+3. Formatting Rules:
+   - NO asterisks for emphasis
+   - NO hashtags for headers
+   - NO excessive formatting
+   - Use simple line breaks for readability
+   - Keep it clean and professional
 
-Instructions:
-- Provide clear, numbered steps (like "1. Review Campaign Settings -> Start by...")
-- Use simple arrows (->) to show progression
-- Use sub-points with letters (a., b., c.) for details
-- Keep formatting minimal - NO asterisks, NO hashtags
-- Be warm and professional
-- Keep it organized and easy to read"""
+4. Tone & Style:
+   - Professional yet warm and approachable
+   - Confident and knowledgeable
+   - Patient and supportive
+   - Focus on helping them succeed
+
+5. Completeness:
+   - Answer the full question
+   - Anticipate follow-up questions
+   - Provide context when needed
+   - Be thorough but concise
+
+Remember: You're guiding someone through a real task. Make it easy to follow and implement."""
     
     try:
         # Try to use URL context if available (requires certain API tiers)
@@ -271,20 +325,46 @@ async def chat(request: ChatRequest):
         used_web_search = False
         related_queries = []
         
-        # If dive deeper is requested, use web search
+        # Handle dive deeper request
         if request.dive_deeper:
-            response, gen_time, used_web_search = generate_response(
-                request.message, 
-                None, 
-                use_web_search=True
-            )
-            search_time = 0
-            sources = []
-            suggestions = [
-                "How do I create a campaign?",
-                "What is the audience manager?",
-                "How do I track campaign performance?"
-            ]
+            # First, search docs to see if we have good information
+            docs, search_time = search_docs(request.message)
+            print(f"Dive Deeper: Found {len(docs)} documents in {search_time:.2f}s")
+            
+            # Check relevance
+            has_good_results = any(doc.score > 0.75 for doc in docs) if docs else False
+            
+            if has_good_results:
+                # We have good docs, provide enhanced answer from docs
+                print("Dive Deeper: Using documentation (good relevance)")
+                result = generate_response(request.message, docs, use_web_search=False, dive_deeper=False)
+            else:
+                # Poor relevance, use web search with doc context
+                print("Dive Deeper: Using web search (low relevance)")
+                result = generate_response(request.message, docs, use_web_search=False, dive_deeper=True)
+                used_web_search = True
+            
+            if len(result) == 4:
+                response, gen_time, suggestions, used_web_search = result
+            else:
+                response, gen_time, used_web_search = result
+                suggestions = []
+            
+            # Format sources
+            sources = [
+                {
+                    "title": doc.metadata.get('title', 'Unknown'),
+                    "url": doc.metadata.get('filename', ''),
+                    "relevance": float(doc.score)
+                }
+                for doc in docs[:3]
+            ] if docs else []
+            
+            # Split suggestions
+            if suggestions:
+                related_queries = suggestions[:2]
+                suggestions = suggestions[2:]
+            
         else:
             # Search docs
             docs, search_time = search_docs(request.message)

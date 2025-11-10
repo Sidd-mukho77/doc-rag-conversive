@@ -187,123 +187,103 @@ export default function ChatInterface() {
   };
 
   const handleDiveDeeper = async (query: string) => {
-    // First, show loading and search DB
-    const userMessage: Message = {
-      role: "user",
-      content: query,
+    // Show initial searching message
+    const searchingMessage: Message = {
+      role: "assistant",
+      content: "Certainly! Let me look for more detailed information in the documentation...",
       timestamp: new Date(),
     };
 
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    setMessages((prev) => [...prev, searchingMessage]);
     setIsLoading(true);
     
     // Update conversation
     setConversations(prev => 
       prev.map(conv => 
         conv.id === currentConversationId 
-          ? { ...conv, messages: newMessages }
+          ? { ...conv, messages: [...conv.messages, searchingMessage] }
           : conv
       )
     );
 
     try {
-      // First try normal search
+      // Call dive deeper endpoint
       const response = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           message: query,
-          dive_deeper: false 
+          dive_deeper: true 
         }),
       });
 
       const data = await response.json();
       
-      // Check if we got good results (high relevance sources)
-      const hasGoodResults = data.sources && data.sources.length > 0 && 
-                            data.sources.some((s: any) => s.relevance > 0.75);
-      
-      if (hasGoodResults) {
-        // Good results found, show them
-        const assistantMessage: Message = {
+      // Check if web search was used
+      if (data.used_web_search) {
+        // Show transition message before web results
+        setSearchingWeb(true);
+        
+        // Wait a moment to show the "searching web" message
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Replace searching message with "couldn't find much" message
+        const notFoundMessage: Message = {
           role: "assistant",
-          content: data.response,
-          sources: data.sources,
-          suggestions: data.suggestions,
-          relatedQueries: data.related_queries || [],
-          usedWebSearch: false,
-          lastUserQuery: query,
+          content: "I couldn't find comprehensive information in my stored documentation. Let me search the web for more current and detailed information...",
           timestamp: new Date(),
         };
-
+        
         setMessages((prev) => {
-          const updatedMessages = [...prev, assistantMessage];
-          setConversations(convs => 
-            convs.map(conv => 
-              conv.id === currentConversationId 
-                ? { ...conv, messages: updatedMessages }
-                : conv
-            )
-          );
-          return updatedMessages;
+          const updated = [...prev];
+          updated[updated.length - 1] = notFoundMessage;
+          return updated;
         });
-        setIsLoading(false);
-      } else {
-        // No good results, wait a bit then search web
-        setTimeout(async () => {
-          setSearchingWeb(true);
-          
-          try {
-            const webResponse = await fetch(`${API_URL}/api/chat`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                message: query,
-                dive_deeper: true 
-              }),
-            });
-
-            const webData = await webResponse.json();
-
-            const assistantMessage: Message = {
-              role: "assistant",
-              content: webData.response,
-              sources: webData.sources,
-              suggestions: webData.suggestions,
-              relatedQueries: webData.related_queries || [],
-              usedWebSearch: true,
-              lastUserQuery: query,
-              timestamp: new Date(),
-            };
-
-            setMessages((prev) => {
-              const updatedMessages = [...prev, assistantMessage];
-              setConversations(convs => 
-                convs.map(conv => 
-                  conv.id === currentConversationId 
-                    ? { ...conv, messages: updatedMessages }
-                    : conv
-                )
-              );
-              return updatedMessages;
-            });
-          } catch (error) {
-            console.error("Web search error:", error);
-          } finally {
-            setIsLoading(false);
-            setSearchingWeb(false);
-          }
-        }, 2000); // 2 second delay before showing web search message
+        
+        // Wait another moment
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
+      
+      // Show final response
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: data.response,
+        sources: data.sources,
+        suggestions: data.suggestions,
+        relatedQueries: data.related_queries || [],
+        usedWebSearch: data.used_web_search,
+        lastUserQuery: query,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = assistantMessage;
+        
+        // Update conversation
+        setConversations(convs => 
+          convs.map(conv => 
+            conv.id === currentConversationId 
+              ? { ...conv, messages: updated }
+              : conv
+          )
+        );
+        return updated;
+      });
+      
     } catch (error) {
       console.error("Error:", error);
       const errorMessage: Message = {
         role: "assistant",
-        content: "Sorry, I encountered an error. Please make sure the backend is running.",
+        content: "Sorry, I encountered an error while searching. Please try again.",
         timestamp: new Date(),
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = errorMessage;
+        return updated;
+      });
+    } finally {
       setIsLoading(false);
       setSearchingWeb(false);
     }
