@@ -117,7 +117,12 @@ def combined_deep_search(query, context_docs):
         doc_context = "\n\n".join(context_parts[:3])  # Top 3 docs
         urls = list(set(urls))[:5]
     
-    try:
+    # Retry logic for API overload
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(max_retries):
+        try:
         # Use Google Search grounding to get web information
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
         config = types.GenerateContentConfig(tools=[grounding_tool])
@@ -183,12 +188,28 @@ Remember: This is a comprehensive "Dive Deeper" response. Be detailed, practical
             config=config
         )
         
-        generation_time = time.time() - start_time
-        cleaned_response = clean_markdown(response.text)
-        
-        return cleaned_response, generation_time, True
-    except Exception as e:
-        return f"I apologize, but I encountered an error during the deep search: {str(e)}", 0, False
+            generation_time = time.time() - start_time
+            cleaned_response = clean_markdown(response.text)
+            
+            return cleaned_response, generation_time, True
+            
+        except Exception as e:
+            error_msg = str(e)
+            
+            # Check if it's a 503 overload error
+            if "503" in error_msg or "overloaded" in error_msg.lower():
+                if attempt < max_retries - 1:
+                    print(f"Gemini API overloaded, retrying in {retry_delay}s... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    return "I apologize, but the AI service is currently experiencing high load. Please try again in a moment.", 0, False
+            else:
+                # Other errors, don't retry
+                return f"I apologize, but I encountered an error during the deep search: {error_msg}", 0, False
+    
+    return "I apologize, but I couldn't complete the search after multiple attempts. Please try again.", 0, False
 
 def generate_response(query, context_docs, use_web_search=False, dive_deeper=False):
     """Generate AI response"""
