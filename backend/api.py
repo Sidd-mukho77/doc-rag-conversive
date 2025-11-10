@@ -13,7 +13,13 @@ app = FastAPI()
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173", 
+        "http://localhost:5174",
+        "https://*.onrender.com",  # Allow all Render domains
+    ],
+    allow_origin_regex=r"https://.*\.onrender\.com",  # Regex pattern for Render domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
