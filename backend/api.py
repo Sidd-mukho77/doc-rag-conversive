@@ -17,9 +17,9 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:5173", 
         "http://localhost:5174",
-        "https://*.onrender.com",  # Allow all Render domains
+        "https://doc-rag-conversive-front.onrender.com",  # Production frontend
     ],
-    allow_origin_regex=r"https://.*\.onrender\.com",  # Regex pattern for Render domains
+    allow_origin_regex=r"https://.*\.onrender\.com",  # Regex pattern for all Render domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
