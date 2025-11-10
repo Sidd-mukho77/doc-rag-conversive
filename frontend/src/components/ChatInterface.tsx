@@ -187,15 +187,16 @@ export default function ChatInterface() {
   };
 
   const handleDiveDeeper = async (query: string) => {
-    // Show initial searching message
+    // Show initial comprehensive searching message
     const searchingMessage: Message = {
       role: "assistant",
-      content: "Certainly! Let me look for more detailed information in the documentation...",
+      content: "Hold on! Let me go through additional relevant documents and search the web for comprehensive information...",
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, searchingMessage]);
     setIsLoading(true);
+    setSearchingWeb(true);
     
     // Update conversation
     setConversations(prev => 
@@ -207,7 +208,7 @@ export default function ChatInterface() {
     );
 
     try {
-      // Call dive deeper endpoint
+      // Call dive deeper endpoint (searches docs + web)
       const response = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -219,39 +220,14 @@ export default function ChatInterface() {
 
       const data = await response.json();
       
-      // Check if web search was used
-      if (data.used_web_search) {
-        // Show transition message before web results
-        setSearchingWeb(true);
-        
-        // Wait a moment to show the "searching web" message
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // Replace searching message with "couldn't find much" message
-        const notFoundMessage: Message = {
-          role: "assistant",
-          content: "I couldn't find comprehensive information in my stored documentation. Let me search the web for more current and detailed information...",
-          timestamp: new Date(),
-        };
-        
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = notFoundMessage;
-          return updated;
-        });
-        
-        // Wait another moment
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
-      // Show final response
+      // Show final comprehensive response
       const assistantMessage: Message = {
         role: "assistant",
         content: data.response,
         sources: data.sources,
         suggestions: data.suggestions,
         relatedQueries: data.related_queries || [],
-        usedWebSearch: data.used_web_search,
+        usedWebSearch: true,  // Always true for dive deeper
         lastUserQuery: query,
         timestamp: new Date(),
       };
@@ -275,7 +251,7 @@ export default function ChatInterface() {
       console.error("Error:", error);
       const errorMessage: Message = {
         role: "assistant",
-        content: "Sorry, I encountered an error while searching. Please try again.",
+        content: "Sorry, I encountered an error during the deep search. Please try again.",
         timestamp: new Date(),
       };
       setMessages((prev) => {

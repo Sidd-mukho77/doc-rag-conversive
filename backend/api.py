@@ -95,52 +95,87 @@ def clean_markdown(text):
     
     return text.strip()
 
-def web_search_response(query, doc_context=None):
-    """Use Gemini's Google Search grounding for web search"""
+def combined_deep_search(query, context_docs):
+    """Combine documentation search with web search for comprehensive answer"""
     import time
     start_time = time.time()
     
+    # Extract documentation context
+    doc_context = ""
+    urls = []
+    if context_docs:
+        context_parts = []
+        for doc in context_docs:
+            text = doc.metadata.get('text', '')
+            title = doc.metadata.get('title', 'Unknown')
+            context_parts.append(f"From {title}:\n{text[:500]}...")
+            
+            # Extract URLs
+            found_urls = re.findall(r'https://docs\.beconversive\.com/[^\s\)]+', text)
+            urls.extend(found_urls[:2])
+        
+        doc_context = "\n\n".join(context_parts[:3])  # Top 3 docs
+        urls = list(set(urls))[:5]
+    
     try:
+        # Use Google Search grounding to get web information
         grounding_tool = types.Tool(google_search=types.GoogleSearch())
         config = types.GenerateContentConfig(tools=[grounding_tool])
         
-        # Build prompt with any available doc context
-        context_note = ""
+        # Build comprehensive prompt
+        doc_section = ""
         if doc_context:
-            context_note = f"\n\nI found some limited information in my documentation:\n{doc_context}\n\nBut let me search the web for more comprehensive and up-to-date information."
+            doc_section = f"\n\nRelevant Documentation I Found:\n{doc_context}\n"
         
-        prompt = f"""You are Convie, an expert SMS Magic assistant with deep knowledge of marketing automation and messaging platforms.
+        url_section = ""
+        if urls:
+            url_list = "\n".join([f"- {url}" for url in urls])
+            url_section = f"\n\nDocumentation Links:\n{url_list}\n"
+        
+        prompt = f"""You are Convie, an expert SMS Magic assistant providing comprehensive, in-depth guidance.
 
-User Question: "{query}"{context_note}
+User Question: "{query}"
+{doc_section}{url_section}
 
 Your Task:
-Search the web for the most current, accurate, and comprehensive information to answer this question.
+I've gathered information from our documentation above. Now, search the web for additional current information, best practices, and any updates. Then synthesize EVERYTHING into one comprehensive, detailed response.
 
 Response Guidelines:
-1. Structure & Clarity:
-   - Start with a brief, friendly introduction
-   - Use numbered steps for processes (e.g., "1. Configure Settings -> Begin by...")
-   - Use sub-points with letters (a., b., c.) for detailed breakdowns
-   - Use simple arrows (->) to show progression or relationships
 
-2. Content Quality:
-   - Provide specific, actionable information
-   - Include relevant details like where to find features, what to click, etc.
-   - Mention any prerequisites or important considerations
-   - Add helpful tips or best practices when relevant
+1. Synthesis & Integration:
+   - Combine documentation insights with web findings
+   - Highlight what's from official docs vs general best practices
+   - Fill in any gaps from the documentation with web research
+   - Provide a complete, thorough answer
 
-3. Formatting:
-   - Keep it clean and readable
-   - NO asterisks, NO hashtags, NO excessive formatting
-   - Use simple line breaks for organization
-   - Be concise but thorough
+2. Structure & Organization:
+   - Start with a warm, confident introduction
+   - Break into clear, numbered main steps
+   - Use sub-points (a., b., c.) for detailed instructions
+   - Use arrows (->) to show flow and relationships
+   - Group related information logically
 
-4. Tone:
-   - Professional yet warm and approachable
-   - Confident and knowledgeable
-   - Helpful and supportive
+3. Content Depth:
+   - Be thorough and detailed - this is a "deep dive"
+   - Include specific instructions (where to click, what to enter)
+   - Mention prerequisites, requirements, and dependencies
+   - Add pro tips, warnings, and best practices
+   - Explain the "why" behind steps when helpful
+   - Include troubleshooting tips if relevant
 
-Remember: You're helping someone accomplish a real task, so be practical and clear."""
+4. Formatting:
+   - NO asterisks, NO hashtags
+   - Clean, readable structure
+   - Use line breaks for clarity
+   - Keep paragraphs focused and scannable
+
+5. Tone & Quality:
+   - Professional, knowledgeable, and authoritative
+   - Warm and supportive
+   - Confident in the guidance provided
+   - Thorough but not overwhelming
+
+Remember: This is a comprehensive "Dive Deeper" response. Be detailed, practical, and complete. The user wants the full picture!"""
         
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
@@ -153,7 +188,7 @@ Remember: You're helping someone accomplish a real task, so be practical and cle
         
         return cleaned_response, generation_time, True
     except Exception as e:
-        return f"I apologize, but I encountered an error while searching the web: {str(e)}", 0, False
+        return f"I apologize, but I encountered an error during the deep search: {str(e)}", 0, False
 
 def generate_response(query, context_docs, use_web_search=False, dive_deeper=False):
     """Generate AI response"""
@@ -325,32 +360,18 @@ async def chat(request: ChatRequest):
         used_web_search = False
         related_queries = []
         
-        # Handle dive deeper request
+        # Handle dive deeper request - ALWAYS search both docs AND web
         if request.dive_deeper:
-            # First, search docs to see if we have good information
+            print("Dive Deeper: Searching documentation AND web for comprehensive answer")
+            
+            # Search docs first
             docs, search_time = search_docs(request.message)
             print(f"Dive Deeper: Found {len(docs)} documents in {search_time:.2f}s")
             
-            # Check relevance
-            has_good_results = any(doc.score > 0.75 for doc in docs) if docs else False
+            # Perform combined deep search (docs + web)
+            response, gen_time, used_web_search = combined_deep_search(request.message, docs)
             
-            if has_good_results:
-                # We have good docs, provide enhanced answer from docs
-                print("Dive Deeper: Using documentation (good relevance)")
-                result = generate_response(request.message, docs, use_web_search=False, dive_deeper=False)
-            else:
-                # Poor relevance, use web search with doc context
-                print("Dive Deeper: Using web search (low relevance)")
-                result = generate_response(request.message, docs, use_web_search=False, dive_deeper=True)
-                used_web_search = True
-            
-            if len(result) == 4:
-                response, gen_time, suggestions, used_web_search = result
-            else:
-                response, gen_time, used_web_search = result
-                suggestions = []
-            
-            # Format sources
+            # Format sources from docs
             sources = [
                 {
                     "title": doc.metadata.get('title', 'Unknown'),
@@ -360,10 +381,20 @@ async def chat(request: ChatRequest):
                 for doc in docs[:3]
             ] if docs else []
             
-            # Split suggestions
-            if suggestions:
-                related_queries = suggestions[:2]
-                suggestions = suggestions[2:]
+            # Generate suggestions
+            query_lower = request.message.lower()
+            if "campaign" in query_lower:
+                related_queries = ["How do I schedule a campaign?", "What are campaign analytics?"]
+                suggestions = ["What is the audience manager?", "How do I track performance?"]
+            elif "message" in query_lower or "send" in query_lower:
+                related_queries = ["How do I personalize messages?", "How do I track delivery?"]
+                suggestions = ["How do I create a campaign?", "What is the audience manager?"]
+            elif "audience" in query_lower or "contact" in query_lower:
+                related_queries = ["How do I import contacts?", "What are audience segments?"]
+                suggestions = ["How do I create a campaign?", "How do I track performance?"]
+            else:
+                related_queries = ["Tell me more about this", "What are best practices?"]
+                suggestions = ["How do I create a campaign?", "What is the audience manager?"]
             
         else:
             # Search docs
