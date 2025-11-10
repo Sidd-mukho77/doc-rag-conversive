@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: sms-magic-rag
+    env: python
+    buildCommand: pip install -r rag_requirements.txt
+    startCommand: python rag_app.py
+    envVars:
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

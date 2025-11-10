@@ -1,0 +1,4 @@
+# Ignore .env files from Kiro scanning
+.env
+.env.*
+*.env

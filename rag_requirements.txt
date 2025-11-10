@@ -1,0 +1,7 @@
+gradio
+pinecone
+python-dotenv
+plotly
+pandas
+scikit-learn
+google-genai
