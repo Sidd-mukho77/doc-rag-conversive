@@ -336,9 +336,9 @@ export default function ChatInterface() {
           variant="square"
           pixelSize={4}
           color="#B19EEF"
-          patternScale={2}
-          patternDensity={1}
-          pixelSizeJitter={0}
+          patternScale={5}
+          patternDensity={0.25}
+          pixelSizeJitter={0.5}
           enableRipples={true}
           rippleSpeed={0.3}
           rippleThickness={0.1}
